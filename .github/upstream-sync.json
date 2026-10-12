@@ -1,0 +1,7 @@
+{
+  "upstream": "https://github.com/wei3470231/DT-Fingerprint-Browser.git",
+  "branch": "main",
+  "mode": "merge",
+  "syncTags": true,
+  "note": "mode=merge 保留你自己的改动并与上游合并；mode=mirror 直接硬覆盖为上游最新（会丢弃本地改动）。"
+}

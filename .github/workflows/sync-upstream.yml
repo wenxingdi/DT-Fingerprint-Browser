@@ -1,0 +1,132 @@
+name: Sync Upstream
+
+# 定时检查上游源仓库是否有新提交，有则自动同步到本仓库。
+# 运行在 GitHub 服务器上，本机是否开机、本机网络是否通畅都不影响。
+#
+# 手动触发：仓库页面 -> Actions -> Sync Upstream -> Run workflow
+
+on:
+  schedule:
+    # 每天 UTC 02:17（北京时间 10:17）检查一次。
+    # GitHub 定时任务在整点高峰期可能延迟数分钟到数十分钟。
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "即使检测到无更新，也强制执行一次推送"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出本仓库（完整历史）
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 读取上游配置
+        id: cfg
+        run: |
+          set -euo pipefail
+          CFG=".github/upstream-sync.json"
+          [ -f "$CFG" ] || { echo "::error::缺少配置文件 $CFG"; exit 1; }
+          {
+            echo "upstream=$(jq -r '.upstream' "$CFG")"
+            echo "branch=$(jq -r '.branch // "main"' "$CFG")"
+            echo "mode=$(jq -r '.mode // "merge"' "$CFG")"
+            echo "sync_tags=$(jq -r '.syncTags // true' "$CFG")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: 拉取上游最新提交
+        id: fetch
+        run: |
+          set -euo pipefail
+          UP="${{ steps.cfg.outputs.upstream }}"
+          BR="${{ steps.cfg.outputs.branch }}"
+          git remote add upstream "$UP" 2>/dev/null || git remote set-url upstream "$UP"
+          git fetch upstream --prune --tags --force
+          if git merge-base --is-ancestor "upstream/$BR" HEAD 2>/dev/null; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "✅ 上游无新提交，本仓库已是最新。"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "🔔 检测到上游更新："
+            git log --oneline --no-decorate HEAD.."upstream/$BR" 2>/dev/null | head -30 \
+              || echo "（本仓库尚无上游历史，将执行首次引导）"
+          fi
+
+      - name: 合并上游更新
+        id: merge
+        if: steps.fetch.outputs.changed == 'true' || inputs.force
+        run: |
+          set -euo pipefail
+          BR="${{ steps.cfg.outputs.branch }}"
+          MODE="${{ steps.cfg.outputs.mode }}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # 首次引导：本仓库还没有上游代码（与上游无共同祖先），
+          # 直接把分支对齐到上游，再把同步工作流本身装回去。
+          if ! git merge-base HEAD "upstream/$BR" >/dev/null 2>&1; then
+            echo "🚀 首次引导：对齐上游 $BR 分支并装载同步工作流。"
+            rm -rf /tmp/keep && mkdir -p /tmp/keep
+            cp -r .github /tmp/keep/ 2>/dev/null || true
+            git reset --hard "upstream/$BR"
+            mkdir -p .github
+            cp -rf /tmp/keep/.github/. .github/
+            git add -A .github
+            git commit -m "chore(ci): 安装上游自动同步工作流" || echo "（无文件变更，跳过提交）"
+            echo "bootstrap=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$MODE" = "mirror" ]; then
+            echo "::warning::mirror 模式：本仓库将被硬重置为上游状态，本地改动会被丢弃。"
+            git reset --hard "upstream/$BR"
+          else
+            git merge --no-edit "upstream/$BR" || {
+              echo "::error::合并冲突，自动同步中止。请在本地手动处理冲突后再跑一次。"
+              echo "=== 冲突文件 ==="
+              git diff --name-only --diff-filter=U
+              exit 1
+            }
+          fi
+
+      - name: 推送到本仓库
+        if: steps.fetch.outputs.changed == 'true' || inputs.force
+        run: |
+          set -euo pipefail
+          BR="${{ steps.cfg.outputs.branch }}"
+          MODE="${{ steps.cfg.outputs.mode }}"
+          if [ "${{ steps.merge.outputs.bootstrap }}" = "true" ] || [ "$MODE" = "mirror" ]; then
+            # 引导/镜像场景下远端是历史无关的占位提交，必须强推
+            git push origin "HEAD:$BR" --force
+          else
+            git push origin "HEAD:$BR"
+          fi
+          if [ "${{ steps.cfg.outputs.sync_tags }}" = "true" ]; then
+            git push origin --tags || true
+          fi
+
+      - name: 写入运行摘要
+        if: always()
+        run: |
+          {
+            echo "## 上游同步结果"
+            echo ""
+            echo "- 上游：\`${{ steps.cfg.outputs.upstream }}\`"
+            echo "- 分支：\`${{ steps.cfg.outputs.branch }}\`"
+            echo "- 模式：\`${{ steps.cfg.outputs.mode }}\`"
+            echo "- 是否首次引导：\`${{ steps.merge.outputs.bootstrap || 'false' }}\`"
+            echo "- 是否检测到更新：\`${{ steps.fetch.outputs.changed || '未知' }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
