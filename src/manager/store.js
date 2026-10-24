@@ -47,7 +47,7 @@ function parseAndBuildProxyConfig(proxyInput) {
   result.rawString = proxyInput.rawString || '';
   result.scope = proxyInput.scope || 'all';
   result.rules = proxyInput.rules || '';
-  result.bypass = proxyInput.bypass || '<local>;localhost;127.0.0.1';
+  result.bypass = proxyInput.bypass !== undefined ? String(proxyInput.bypass).trim() : '<local>;localhost;127.0.0.1';
 
   // 如果提供了 rawString，优先以解析结果更新
   if (result.rawString) {
@@ -570,6 +570,13 @@ function createRecord(data = {}) {
     timezone,
     customUa,
     proxy: parseAndBuildProxyConfig(data.proxy),
+    rotatingProxy: {
+      enabled: Boolean(data.rotatingProxy?.enabled),
+      filePath: (data.rotatingProxy?.filePath || '').trim(),
+      rules: (data.rotatingProxy?.rules || '').trim(),
+      mode: data.rotatingProxy?.mode || 'random'
+    },
+    blockDialogs: Boolean(data.blockDialogs),
     extensions: data.extensions || '',
     userDataDir,
     fp,

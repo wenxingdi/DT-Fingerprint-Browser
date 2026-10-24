@@ -133,6 +133,24 @@ if (envId) {
   };
 }
 
+// 支持命令行直接传入或覆盖动态轮换代理池与弹窗屏蔽 (供自动化脚本直调)
+const cmdRotatingFile = getArg('rotating-file') || getArg('rotating-proxy-file');
+const cmdRotatingRules = getArg('rotating-rules') || getArg('rotating-proxy-rules');
+const cmdRotatingMode = getArg('rotating-mode');
+if (cmdRotatingFile) {
+  env.rotatingProxy = {
+    enabled: true,
+    filePath: cmdRotatingFile,
+    rules: cmdRotatingRules || (env.rotatingProxy && env.rotatingProxy.rules) || '',
+    mode: cmdRotatingMode || (env.rotatingProxy && env.rotatingProxy.mode) || 'random'
+  };
+}
+if (process.argv.includes('--block-dialogs')) {
+  env.blockDialogs = true;
+} else if (process.argv.includes('--no-block-dialogs')) {
+  env.blockDialogs = false;
+}
+
 // 2. 配置用户数据/缓存目录与远程调试端口 (必须在 app.whenReady 之前)
 const cmdUserData = getArg('user-data-dir');
 let absUserData;
@@ -532,6 +550,13 @@ function injectSyncCapture(wc) {
   `, true).catch(() => {});
 }
 
+// 触发标签页重新加载
+function triggerTabReload(tabItem) {
+  if (!tabItem || !tabItem.view || !tabItem.view.webContents || tabItem.view.webContents.isDestroyed()) return;
+  markTabLoading(tabItem);
+  tabItem.view.webContents.reload();
+}
+
 // 4. 为标签页配置快捷键、右键菜单、真实物理点击及加载事件监听
 function setupTabListeners(tabItem) {
   const { view, id: tabId } = tabItem;
@@ -548,12 +573,10 @@ function setupTabListeners(tabItem) {
       closeTab(tabId);
     } else if (isCtrl && input.key.toLowerCase() === 'r') {
       event.preventDefault();
-      markTabLoading(tabItem);
-      view.webContents.reload();
+      triggerTabReload(tabItem);
     } else if (input.key === 'F5') {
       event.preventDefault();
-      markTabLoading(tabItem);
-      view.webContents.reload();
+      triggerTabReload(tabItem);
     } else if (input.key === 'F12') {
       event.preventDefault();
       view.webContents.isDevToolsOpened() ? view.webContents.closeDevTools() : view.webContents.openDevTools({ mode: 'detach' });
@@ -682,8 +705,7 @@ function setupTabListeners(tabItem) {
       label: '重新加载 (Reload)',
       accelerator: 'F5',
       click: () => {
-        markTabLoading(tabItem);
-        view.webContents.reload();
+        triggerTabReload(tabItem);
       }
     });
     menuTemplate.push({ type: 'separator' });
@@ -749,19 +771,21 @@ function setupTabListeners(tabItem) {
     if (isSyncMaster) {
       injectSyncCapture(view.webContents);
     }
+    injectBlockDialogs(view.webContents);
   });
 
   view.webContents.on('did-finish-load', () => {
     if (isSyncMaster) {
       injectSyncCapture(view.webContents);
     }
+    injectBlockDialogs(view.webContents);
   });
 
   // 监听导航和加载事件：支持多框架递归彻底完成检测
   view.webContents.on('did-start-loading', () => {
     markTabLoading(tabItem);
   });
-  view.webContents.on('did-start-navigation', () => {
+  view.webContents.on('did-start-navigation', (_event, _url, _isInPlace, isMainFrame) => {
     markTabLoading(tabItem);
   });
   view.webContents.on('did-stop-loading', () => {
@@ -773,13 +797,20 @@ function setupTabListeners(tabItem) {
   view.webContents.on('did-frame-finish-load', () => {
     scheduleTabLoadingCheck(tabItem);
   });
-  view.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+  view.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     if (errorCode === -3) {
       return; // ERR_ABORTED: 正常被 stop() 中止，绝不误清除新导航的 pendingNavUrl
     }
     scheduleTabLoadingCheck(tabItem);
 
-    // 关键优化：若非内部自测页，加载失败时自动展示友好诊断页，彻底杜绝一片白板
+    // 关键核心修复：页面内嵌的子 iframe (如 Cloudflare Turnstile 验证码 challenges.cloudflare.com 等)、第三方资源加载失败时，
+    // 严禁将整个顶层页面替换为本地错误页！子框架加载失败由网页自身容错处理。
+    if (isMainFrame === false) {
+      console.warn(`[Subframe Load Notice] 网页内嵌子框架加载中断 (已自动隔离保护主页面): ${validatedURL} (${errorCode}: ${errorDescription})`);
+      return;
+    }
+
+    // 关键优化：若非内部自测页，且是主框架真正无法打开时，才展示友好诊断页
     if (validatedURL && !validatedURL.includes('testing/index.html') && !validatedURL.startsWith('devtools://') && !validatedURL.startsWith('data:')) {
       const escapedUrl = validatedURL.replace(/[<>"']/g, '');
       const isProxyUsed = isCurrentlyUsingProxy;
@@ -938,17 +969,32 @@ function getEnvSession() {
   return envSession;
 }
 
+// 注入弹窗屏蔽脚本 (若当前环境勾选了 blockDialogs)
+function injectBlockDialogs(wc) {
+  if (!currentEnv.blockDialogs || !wc || wc.isDestroyed()) return;
+  wc.executeJavaScript(`
+    (() => {
+      try {
+        window.alert = () => true;
+        window.confirm = () => true;
+        window.prompt = () => null;
+      } catch (_) {}
+    })();
+  `, true).catch(() => {});
+}
+
 // 动态应用/切换代理
 async function updateSessionProxy() {
   const sessions = [session.defaultSession, getEnvSession()];
   const hasProxyConfig = Boolean(currentEnv.proxy && currentEnv.proxy.host && currentEnv.proxy.port);
+  const hasRotating = Boolean(currentEnv.rotatingProxy && currentEnv.rotatingProxy.enabled);
 
-  if (userWantsProxy && hasProxyConfig) {
+  if ((userWantsProxy && hasProxyConfig) || hasRotating) {
     for (const ses of sessions) {
-      await applyProxy(ses, currentEnv.proxy);
+      await applyProxy(ses, userWantsProxy ? currentEnv.proxy : null, currentEnv.rotatingProxy);
     }
     isCurrentlyUsingProxy = true;
-    console.log(`[Proxy] 已切换为代理上网: ${currentEnv.proxy.host}:${currentEnv.proxy.port}`);
+    console.log(`[Proxy] 已切换为代理网络模式 (固定代理: ${hasProxyConfig ? currentEnv.proxy.host : '无'}, 动态轮换池: ${hasRotating ? '已激活' : '未开启'})`);
   } else {
     closeCurrentBridge();
     for (const ses of sessions) {
@@ -965,10 +1011,11 @@ async function configureSession(ses, config) {
     throw new Error('当前内核未提供 setFingerprintConfig，必须使用定制 electron.exe 启动！');
   }
 
-  // 配置代理
+  // 配置代理 (含固定代理与多域名动态轮换代理池)
   const hasProxyConfig = Boolean(config.proxy && config.proxy.host && config.proxy.port);
-  if (userWantsProxy && hasProxyConfig) {
-    await applyProxy(ses, config.proxy);
+  const hasRotating = Boolean(config.rotatingProxy && config.rotatingProxy.enabled);
+  if ((userWantsProxy && hasProxyConfig) || hasRotating) {
+    await applyProxy(ses, userWantsProxy ? config.proxy : null, config.rotatingProxy);
     isCurrentlyUsingProxy = true;
   } else {
     closeCurrentBridge();
@@ -1514,12 +1561,11 @@ if (typeof chrome !== 'undefined') {
   });
   ipcMain.on('action-nav-reload', () => {
     const activeTab = tabs.find(t => t.id === activeTabId);
-    if (activeTab && activeTab.view && activeTab.view.webContents && !activeTab.view.webContents.isDestroyed()) {
-      markTabLoading(activeTab);
+    if (activeTab) {
       if (isSyncMaster) {
         sendHubMessage({ action: 'sync-event', envId: currentEnv.id, payload: { type: 'reload' } });
       }
-      activeTab.view.webContents.reload();
+      triggerTabReload(activeTab);
     }
   });
   ipcMain.on('action-nav-stop', () => {
@@ -1788,17 +1834,11 @@ if (typeof chrome !== 'undefined') {
     } else if (isCtrl && input.key.toLowerCase() === 'r') {
       event.preventDefault();
       const activeTab = tabs.find(t => t.id === activeTabId);
-      if (activeTab) {
-        markTabLoading(activeTab);
-        activeTab.view.webContents.reload();
-      }
+      if (activeTab) triggerTabReload(activeTab);
     } else if (input.key === 'F5') {
       event.preventDefault();
       const activeTab = tabs.find(t => t.id === activeTabId);
-      if (activeTab) {
-        markTabLoading(activeTab);
-        activeTab.view.webContents.reload();
-      }
+      if (activeTab) triggerTabReload(activeTab);
     } else if (input.key === 'F12') {
       event.preventDefault();
       const activeTab = tabs.find(t => t.id === activeTabId);
