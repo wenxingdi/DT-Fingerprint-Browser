@@ -552,6 +552,7 @@
 
     .address-bar-box {
       flex: 1;
+      min-width: 160px;
       height: 28px;
       background: var(--bg-address);
       border-radius: 14px;
@@ -600,6 +601,11 @@
       display: flex;
       align-items: center;
       gap: 6px;
+      flex-shrink: 0;
+    }
+    @media (max-width: 960px) {
+      .badges { gap: 3px; }
+      .badge { max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     }
     .badge {
       font-size: 11px;
@@ -1257,18 +1263,18 @@
         chkUseProxy.checked = data.userWantsProxy;
       }
 
-      // 代理信息逻辑：如果浏览器使用了代理，则显示直连，否则显示代理IP地址
+      // 代理信息逻辑修正：处于代理状态时展示代理节点信息(绿色/蓝色高亮)，直连状态时明确展示直连
       const isUsingProxy = Boolean(data.isUsingProxy);
       const proxyHost = data.proxyHost || (env.proxy && env.proxy.host ? `${env.proxy.host}:${env.proxy.port}` : '');
 
       if (isUsingProxy) {
-        proxyBadge.textContent = '直连';
-        proxyBadge.className = 'badge blue';
-        proxyBadge.title = '当前网络: 正在通过代理转发上网';
+        proxyBadge.textContent = proxyHost ? proxyHost : '已启用代理';
+        proxyBadge.className = 'badge green';
+        proxyBadge.title = `当前网络: 正在通过代理转发上网 (${proxyHost || '已启用'})`;
       } else {
-        proxyBadge.textContent = proxyHost ? proxyHost : '未配置代理';
+        proxyBadge.textContent = '直连';
         proxyBadge.className = 'badge orange';
-        proxyBadge.title = proxyHost ? `当前网络: 本地直连模式 (代理IP: ${proxyHost})` : '当前网络: 本地直连模式 (未配置代理)';
+        proxyBadge.title = proxyHost ? `当前网络: 本地直连模式 (已暂停代理: ${proxyHost})` : '当前网络: 本地直连模式 (未配置代理)';
       }
 
       // 同步器主从角色徽章状态展示

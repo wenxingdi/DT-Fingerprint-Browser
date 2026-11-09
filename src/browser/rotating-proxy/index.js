@@ -5,13 +5,15 @@ const { RotatingDispatcherServer } = require('./dispatcher-server');
 
 let activePool = null;
 let activeDispatcher = null;
+let startingPromise = null;
 
 /**
  * 启动并应用动态轮换代理服务
  * @param {Object} rotatingConfig 环境中的 rotatingProxy 配置
+ * @param {boolean} [forceRestart=false] 是否强制关闭现有分发端口重新启动
  * @returns {Promise<{ port: number, pacRule: string, count: number } | null>}
  */
-async function startRotatingProxy(rotatingConfig) {
+async function startRotatingProxy(rotatingConfig, forceRestart = false) {
   if (!rotatingConfig || !rotatingConfig.enabled) {
     stopRotatingProxy();
     return null;
@@ -26,42 +28,66 @@ async function startRotatingProxy(rotatingConfig) {
     return null;
   }
 
-  // 关闭旧服务
-  stopRotatingProxy();
-
-  const pool = new RotatingProxyPool({ filePath, rules, mode });
-  let loadResult;
-  if (filePath && filePath.trim()) {
-    loadResult = pool.loadFromFile(filePath.trim());
-  } else if (rawText && rawText.trim()) {
-    loadResult = pool.loadFromString(rawText.trim());
-  } else {
-    console.warn('[RotatingProxy] 未提供代理文档路径或内容');
-    return null;
+  // 若当前进程已有运行中的分发调度器且未显式要求强制重启，直接复用当前端口，
+  // 避免在 defaultSession 和 envSession 连续调用 applyProxy 时销毁前者端口引发白屏
+  if (!forceRestart && activeDispatcher && activeDispatcher.server && activePool) {
+    return {
+      ports: activeDispatcher.ports,
+      port: activeDispatcher.port,
+      rules: rules.trim(),
+      count: activePool.getCount(),
+      dispatcher: activeDispatcher
+    };
   }
 
-  if (!loadResult.success || pool.getCount() === 0) {
-    console.error('[RotatingProxy] 代理池初始化失败:', loadResult.error || '有效代理数为 0');
-    return null;
+  if (startingPromise) {
+    return await startingPromise;
   }
 
-  const dispatcher = new RotatingDispatcherServer(pool, {
-    portCount: 3,
-    connectTimeout: 3000,
-    maxRetries: 3
-  });
-  const port = await dispatcher.start();
+  startingPromise = (async () => {
+    try {
+      // 关闭旧服务
+      stopRotatingProxy();
 
-  activePool = pool;
-  activeDispatcher = dispatcher;
+      const pool = new RotatingProxyPool({ filePath, rules, mode });
+      let loadResult;
+      if (filePath && filePath.trim()) {
+        loadResult = pool.loadFromFile(filePath.trim());
+      } else if (rawText && rawText.trim()) {
+        loadResult = pool.loadFromString(rawText.trim());
+      } else {
+        console.warn('[RotatingProxy] 未提供代理文档路径或内容');
+        return null;
+      }
 
-  return {
-    ports: dispatcher.ports,
-    port: dispatcher.port,
-    rules: rules.trim(),
-    count: pool.getCount(),
-    dispatcher
-  };
+      if (!loadResult.success || pool.getCount() === 0) {
+        console.error('[RotatingProxy] 代理池初始化失败:', loadResult.error || '有效代理数为 0');
+        return null;
+      }
+
+      const dispatcher = new RotatingDispatcherServer(pool, {
+        portCount: 3,
+        connectTimeout: 3000,
+        maxRetries: 3
+      });
+      const port = await dispatcher.start();
+
+      activePool = pool;
+      activeDispatcher = dispatcher;
+
+      return {
+        ports: dispatcher.ports,
+        port: dispatcher.port,
+        rules: rules.trim(),
+        count: pool.getCount(),
+        dispatcher
+      };
+    } finally {
+      startingPromise = null;
+    }
+  })();
+
+  return await startingPromise;
 }
 
 /**
