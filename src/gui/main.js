@@ -95,7 +95,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1380,
     height: 880,
-    minWidth: 1000,
+    minWidth: 1060,
     minHeight: 600,
     show: !isStartMinimized,
     title: 'DT - 指纹浏览器',

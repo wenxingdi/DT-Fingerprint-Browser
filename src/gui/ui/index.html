@@ -490,25 +490,35 @@
       display: flex;
       flex-direction: column;
       height: 100vh;
-      overflow: hidden;
+      min-width: 1060px;
+      overflow-x: auto;
+      overflow-y: hidden;
       transition: background 0.2s ease, color 0.2s ease;
     }
 
-    /* 顶部导航 Header */
+    /* 顶部导航 Header (严格不换行防错乱) */
     header {
       height: 60px;
+      min-height: 60px;
       background: var(--bg-header);
       border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 24px;
+      padding: 0 20px;
+      gap: 12px;
+      min-width: 1060px;
+      white-space: nowrap;
+      flex-shrink: 0;
+      box-sizing: border-box;
       transition: background 0.2s ease, border-color 0.2s ease;
     }
     .logo-area {
       display: flex;
       align-items: center;
       gap: 12px;
+      flex-shrink: 0;
+      white-space: nowrap;
     }
     .logo-badge {
       width: 36px;
@@ -522,35 +532,42 @@
       font-weight: 800;
       color: #fff;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+      flex-shrink: 0;
     }
     .logo-title {
       font-size: 16px;
       font-weight: 700;
       color: var(--text-main);
       letter-spacing: 0.5px;
+      white-space: nowrap;
     }
     .logo-sub {
       font-size: 11px;
       color: var(--text-muted);
       margin-top: 1px;
+      white-space: nowrap;
     }
 
-    /* 统计卡片 Stats */
+    /* 统计卡片 Stats (单行防挤压文字垂直塌陷) */
     .stats-row {
       display: flex;
-      gap: 12px;
+      gap: 8px;
       align-items: center;
+      flex-shrink: 0;
+      white-space: nowrap;
     }
     .stat-pill {
       background: var(--bg-sub);
       border: 1px solid var(--border-sub);
       border-radius: 6px;
-      padding: 5px 12px;
+      padding: 5px 10px;
       display: flex;
       align-items: center;
       gap: 6px;
       font-size: 12px;
       color: var(--text-sub);
+      white-space: nowrap;
+      flex-shrink: 0;
     }
     .stat-pill b {
       color: var(--accent);
@@ -563,27 +580,36 @@
       flex: 1;
       display: flex;
       flex-direction: column;
-      padding: 16px 24px;
+      padding: 14px 20px;
       gap: 12px;
+      min-width: 1060px;
       overflow: hidden;
+      box-sizing: border-box;
     }
 
-    /* 工具栏 Controls */
+    /* 工具栏 Controls (单行排版) */
     .toolbar {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
+      min-width: 1060px;
+      white-space: nowrap;
+      flex-shrink: 0;
     }
     .toolbar-left {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
+      flex-shrink: 0;
+      white-space: nowrap;
     }
     .toolbar-right {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
+      flex-shrink: 0;
+      white-space: nowrap;
     }
 
     /* 按钮规范 */
@@ -702,18 +728,23 @@
       border-bottom: 1px solid var(--border);
     }
     th {
-      padding: 12px 14px;
+      padding: 10px 12px;
       font-weight: 600;
       color: var(--text-muted);
+      white-space: nowrap;
     }
     td {
-      padding: 10px 14px;
+      padding: 6px 12px;
+      height: 48px;
       border-bottom: 1px solid var(--border);
       color: var(--text-main);
+      white-space: nowrap;
+      vertical-align: middle;
+      box-sizing: border-box;
     }
     tbody tr:hover { background: var(--bg-hover); }
 
-    /* 状态与徽章 */
+    /* 状态与徽章 (严格防换行错位) */
     .status-badge {
       display: inline-flex;
       align-items: center;
@@ -722,6 +753,8 @@
       border-radius: 4px;
       font-size: 11px;
       font-weight: 600;
+      white-space: nowrap;
+      flex-shrink: 0;
     }
     .status-badge.running {
       background: rgba(16, 185, 129, 0.15);
@@ -752,6 +785,13 @@
       padding: 2px 6px;
       border-radius: 4px;
       background: var(--badge-bg);
+      color: var(--text-muted);
+      border: 1px solid var(--border-sub);
+      white-space: nowrap;
+      display: inline-flex;
+      align-items: center;
+      flex-shrink: 0;
+    }
       color: var(--text-muted);
       border: 1px solid var(--border-sub);
     }
@@ -1197,13 +1237,13 @@
         <table>
           <thead>
             <tr>
-              <th style="width: 40px;"><input type="checkbox" id="checkAll"></th>
-              <th style="width: 170px;">环境名称</th>
-              <th style="width: 110px;">运行状态</th>
-              <th style="width: 100px;">远程端口</th>
-              <th style="width: 150px;">代理信息</th>
-              <th>硬件指纹摘要</th>
-              <th style="width: 510px; min-width: 510px; text-align: right;">操作</th>
+              <th style="width: 40px; white-space: nowrap;"><input type="checkbox" id="checkAll"></th>
+              <th style="width: 170px; white-space: nowrap;">环境名称</th>
+              <th style="width: 100px; white-space: nowrap;">运行状态</th>
+              <th style="width: 110px; white-space: nowrap;">远程端口</th>
+              <th style="width: 160px; white-space: nowrap;">代理信息</th>
+              <th style="min-width: 260px; white-space: nowrap;">硬件指纹摘要</th>
+              <th style="width: 510px; min-width: 510px; text-align: right; white-space: nowrap;">操作</th>
             </tr>
           </thead>
           <tbody id="envTableBody">
@@ -2123,63 +2163,83 @@
 
         // 运行状态
         const tdStatus = document.createElement('td');
+        tdStatus.style.whiteSpace = 'nowrap';
         if (isRunning) {
           tdStatus.innerHTML = `
-            <div class="status-badge running">
+            <div class="status-badge running" style="white-space: nowrap;">
               <div class="pulse-dot"></div>
               <span>运行中</span>
             </div>
           `;
         } else {
           tdStatus.innerHTML = `
-            <div class="status-badge stopped">
+            <div class="status-badge stopped" style="white-space: nowrap;">
               <span>已停止</span>
             </div>
           `;
         }
         tr.appendChild(tdStatus);
 
-        // 远程端口
+        // 远程端口 (严格单行禁止错位折行)
         const tdPort = document.createElement('td');
+        tdPort.style.whiteSpace = 'nowrap';
         if (env.remotePortEnabled && env.remotePort) {
-          tdPort.innerHTML = `<span class="tag port">CDP: ${escapeHtml(env.remotePort)}</span>`;
+          tdPort.innerHTML = `<span class="tag port" style="white-space: nowrap;">CDP: ${escapeHtml(env.remotePort)}</span>`;
         } else {
-          tdPort.innerHTML = `<span style="color: var(--text-muted); opacity: 0.8;">未开启</span>`;
+          tdPort.innerHTML = `<span style="color: var(--text-muted); opacity: 0.8; white-space: nowrap;">未开启</span>`;
         }
         tr.appendChild(tdPort);
 
-        // 代理信息
+        // 代理信息 (单行防撑开)
         const tdProxy = document.createElement('td');
+        tdProxy.style.whiteSpace = 'nowrap';
         if (env.proxy && env.proxy.enabled && env.proxy.host) {
           const type = (env.proxy.type || 'http').toUpperCase();
           const scope = env.proxy.scope === 'rules' ? '指定URL' : '全局';
           const safeHost = escapeHtml(env.proxy.host);
           const safePort = escapeHtml(env.proxy.port);
           tdProxy.innerHTML = `
-            <span class="tag proxy">${type}</span>
-            <span style="font-size: 11px; margin-left: 4px; color: var(--text-sub);">${safeHost}:${safePort} (${scope})</span>
+            <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px;" title="${type} ${safeHost}:${safePort} (${scope})">
+              <span class="tag proxy">${type}</span>
+              <span style="font-size: 11px; margin-left: 4px; color: var(--text-sub);">${safeHost}:${safePort}</span>
+            </div>
           `;
         } else {
-          tdProxy.innerHTML = `<span class="tag direct">直连网络</span>`;
+          tdProxy.innerHTML = `<span class="tag direct" style="white-space: nowrap;">直连网络</span>`;
         }
         tr.appendChild(tdProxy);
 
-        // 硬件指纹摘要
+        // 硬件指纹摘要 (显卡名称智能清洗截断，紧凑两行保持固定行高，绝不撑大表格)
         const tdFp = document.createElement('td');
+        tdFp.style.whiteSpace = 'nowrap';
+        tdFp.style.maxWidth = '320px';
         const fp = env.fp || {};
         const cores = fp.navigator?.hardwareConcurrency || '?';
         const mem = fp.navigator?.deviceMemory || '?';
-        const rawGpu = fp.webgl?.renderer ? fp.webgl.renderer.split('(')[1]?.split(')')[0] || fp.webgl.renderer.slice(0, 24) : '默认显卡';
+        
+        let rawGpu = '默认显卡';
+        if (fp.webgl?.renderer) {
+          const s = String(fp.webgl.renderer);
+          if (s.includes('(')) {
+            const inner = s.split('(')[1]?.split(')')[0] || '';
+            const parts = inner.split(',').map(p => p.trim()).filter(Boolean);
+            rawGpu = parts[1] || parts[0] || s;
+            rawGpu = rawGpu.replace(/\s*Direct3D\d+.*$/i, '').trim();
+          } else {
+            rawGpu = s.slice(0, 28);
+          }
+        }
         const gpu = escapeHtml(rawGpu);
         const res = fp.screen ? `${fp.screen.width}x${fp.screen.height}` : '?';
         const lang = escapeHtml(env.language || 'en-US');
+        const tz = escapeHtml(env.timezone || fp.timezone || 'America/New_York');
 
         tdFp.innerHTML = `
-          <div style="font-size: 12px; color: var(--text-main);">
-            <b style="color: var(--accent);">${cores}核/${mem}G</b> · <span style="color: var(--text-sub);">${gpu}</span>${env.customUa ? `<span class="tag" style="color: #38bdf8; border-color: rgba(56, 189, 248, 0.3); margin-left: 6px; font-size: 10px;" title="自定义UA: ${escapeHtml(env.customUa)}">自定义UA</span>` : ''}
+          <div style="font-size: 12px; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; line-height: 1.4;" title="${escapeHtml(fp.webgl?.renderer || '')}">
+            <b style="color: var(--accent);">${cores}核/${mem}G</b> · <span style="color: var(--text-sub);">${gpu}</span>${env.customUa ? `<span class="tag" style="color: #38bdf8; border-color: rgba(56, 189, 248, 0.3); margin-left: 4px; font-size: 10px;" title="自定义UA: ${escapeHtml(env.customUa)}">自定义UA</span>` : ''}
           </div>
-          <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
-            分辨率: ${res} | 时区: <b style="color: var(--accent);">${escapeHtml(env.timezone || fp.timezone || 'America/New_York')}</b> | 语言: <b style="color: var(--accent);">${lang}</b>
+          <div style="font-size: 11px; color: var(--text-muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; line-height: 1.4;">
+            ${res} | <span style="color: var(--text-sub);">${tz}</span> | <span style="color: var(--text-sub);">${lang}</span>
           </div>
         `;
         tr.appendChild(tdFp);

@@ -11,7 +11,7 @@ process.on('uncaughtException', (err) => {
 
 let isWindowClosing = false;
 
-const { app, BaseWindow, WebContentsView, ipcMain, session, Menu } = require('electron');
+const { app, BaseWindow, WebContentsView, ipcMain, session, Menu, BrowserWindow, screen } = require('electron');
 
 // 系统稳定性与证书安全放行：防止显卡驱动超时(TDR)引发蓝屏，放行代理中间人/自签名证书杜绝页面加载白屏
 app.commandLine.appendSwitch('disable-gpu-process-crash-limit');
@@ -29,6 +29,30 @@ const { buildCookieUrl } = require('../shared/cookie-helper');
 
 const LOCAL_TEST_PAGE_PATH = path.join(__dirname, 'testing', 'index.html');
 const LOCAL_TEST_PAGE_URL = url.pathToFileURL(LOCAL_TEST_PAGE_PATH).href;
+const STEALTH_PRELOAD = path.join(__dirname, 'stealth-preload.js');
+
+// 保证 F12 开发者工具每次弹出时大小固定为 800*600 且在当前屏幕工作区居中
+function attachDevToolsHandler(wc) {
+  if (!wc || wc._hasDevToolsHandler) return;
+  wc._hasDevToolsHandler = true;
+  wc.on('devtools-opened', () => {
+    try {
+      const dtWc = wc.devToolsWebContents;
+      if (dtWc) {
+        const dtWin = BrowserWindow.fromWebContents(dtWc);
+        if (dtWin && !dtWin.isDestroyed()) {
+          const primaryDisplay = screen.getPrimaryDisplay();
+          const { width: sw, height: sh } = primaryDisplay.workAreaSize;
+          const w = 800;
+          const h = 600;
+          const x = Math.max(0, Math.round((sw - w) / 2));
+          const y = Math.max(0, Math.round((sh - h) / 2));
+          dtWin.setBounds({ x, y, width: w, height: h });
+        }
+      }
+    } catch (_) {}
+  });
+}
 
 // 智能网址解析器：自动补全协议头、解析域名与回退搜索引擎，彻底杜绝无协议头传参导致 ERR_INVALID_URL 页面白板
 function resolveNavUrl(rawUrl) {
@@ -561,6 +585,9 @@ function triggerTabReload(tabItem) {
 function setupTabListeners(tabItem) {
   const { view, id: tabId } = tabItem;
 
+  // 绑定 F12 开发者工具尺寸 (800*600) 与居中监听
+  attachDevToolsHandler(view.webContents);
+
   // 网页快捷键支持 (Ctrl+T, Ctrl+W, Ctrl+R, F5, F12 等)
   view.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
@@ -624,6 +651,10 @@ function setupTabListeners(tabItem) {
       menuTemplate.push({
         label: `搜索 "${displayQuery}"`,
         click: () => createTab(`https://www.google.com/search?q=${encodeURIComponent(query)}`)
+      });
+      menuTemplate.push({
+        label: '翻译选中文本 (谷歌翻译)',
+        click: () => createTab(`https://translate.google.com/?sl=auto&tl=zh-CN&text=${encodeURIComponent(query)}`)
       });
       menuTemplate.push({ type: 'separator' });
     }
@@ -708,6 +739,17 @@ function setupTabListeners(tabItem) {
         triggerTabReload(tabItem);
       }
     });
+
+    // 右键翻译当前网页功能
+    const currentNavUrl = view.webContents.getURL();
+    if (currentNavUrl && /^https?:\/\//i.test(currentNavUrl)) {
+      menuTemplate.push({
+        label: '🌐 翻译当前网页为中文',
+        click: () => {
+          createTab(`https://translate.google.com/translate?sl=auto&tl=zh-CN&u=${encodeURIComponent(currentNavUrl)}`);
+        }
+      });
+    }
     menuTemplate.push({ type: 'separator' });
 
     // 检查元素
@@ -865,7 +907,8 @@ async function createTab(targetUrl) {
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
-      backgroundThrottling: false
+      backgroundThrottling: false,
+      preload: STEALTH_PRELOAD
     }
   });
 
