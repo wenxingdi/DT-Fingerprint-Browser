@@ -207,14 +207,26 @@ async function stop(idOrName) {
     return { success: true, message: `环境 "${env.name}" 未在运行` };
   }
 
-  try {
-    process.kill(record.pid);
-  } catch {}
+  if (record.pid) {
+    try {
+      process.kill(record.pid);
+    } catch {}
 
-  try {
-    // Windows 彻底终结进程树释放端口及文件锁
-    spawn('taskkill', ['/PID', String(record.pid), '/T', '/F'], { windowsHide: true });
-  } catch {}
+    // Windows 彻底终结进程树释放端口及文件锁，阻塞等待进程退出
+    await new Promise(resolve => {
+      try {
+        const killer = spawn('taskkill', ['/PID', String(record.pid), '/T', '/F'], { windowsHide: true });
+        killer.on('close', () => resolve());
+        killer.on('error', () => resolve());
+        setTimeout(resolve, 2000); // 兜底保护 2 秒
+      } catch {
+        resolve();
+      }
+    });
+
+    // 预留短暂时间供 Windows 文件系统释放独占文件锁 (LevelDB / Cookies)
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
 
   delete activeMap[env.id];
   writeActiveFile(activeMap);

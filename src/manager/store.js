@@ -632,7 +632,8 @@ async function getNextAvailablePort(excludeEnvId = null) {
 
   let port = 9222;
   let iterations = 0;
-  while (iterations < 60) {
+  // 深度扫描最多 500 个端口，全面杜绝端口冲突与自动化失败
+  while (iterations < 500) {
     iterations++;
     // 1. 检查未被任何已知环境配置使用
     if (!configuredPorts.has(port)) {
@@ -735,16 +736,30 @@ function clearEnvironmentCache(id) {
   const sub = env.userDataDir ? path.basename(env.userDataDir) : env.id;
   const targetDir = (env.userDataDir && path.isAbsolute(env.userDataDir)) ? env.userDataDir : path.join(PROFILES_DIR, sub);
   if (fs.existsSync(targetDir)) {
-    try {
-      fs.rmSync(targetDir, { recursive: true, force: true });
-    } catch (e) {
-      // 若某些文件暂时被系统锁定，尝试清空子目录
-      console.warn(`[Clear Cache Warn] rmSync 异常，尝试清空内容: ${e.message}`);
-      const files = fs.readdirSync(targetDir);
-      for (const file of files) {
-        try {
-          fs.rmSync(path.join(targetDir, file), { recursive: true, force: true });
-        } catch (_) {}
+    let deleted = false;
+    // Windows 文件锁短暂延迟重试机制 (最多尝试 3 次)
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        fs.rmSync(targetDir, { recursive: true, force: true });
+        deleted = true;
+        break;
+      } catch (e) {
+        if (attempt === 2) {
+          // 若父目录依然被特定句柄锁定，降级逐项清空子项
+          console.warn(`[Clear Cache Warn] rmSync 异常，尝试逐项清空内容: ${e.message}`);
+          try {
+            const files = fs.readdirSync(targetDir);
+            for (const file of files) {
+              try {
+                fs.rmSync(path.join(targetDir, file), { recursive: true, force: true });
+              } catch (_) {}
+            }
+          } catch (_) {}
+        } else {
+          // 毫秒级微等待系统释放文件锁
+          const start = Date.now();
+          while (Date.now() - start < 120) {}
+        }
       }
     }
     if (!fs.existsSync(targetDir)) {

@@ -95,7 +95,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1380,
     height: 880,
-    minWidth: 1000,
+    minWidth: 1060,
     minHeight: 600,
     show: !isStartMinimized,
     title: 'DT - 指纹浏览器',
@@ -708,8 +708,12 @@ app.whenReady().then(() => {
     });
     if (!res.canceled && res.filePaths && res.filePaths.length > 0) {
       const filePath = res.filePaths[0];
-      const content = fs.readFileSync(filePath, 'utf8');
-      return { success: true, filePath, content };
+      try {
+        const content = fs.readFileSync(filePath, 'utf8');
+        return { success: true, filePath, content };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
     }
     return { success: false };
   });

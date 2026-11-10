@@ -18,6 +18,7 @@ class RotatingDispatcherServer {
     this.portCount = options.portCount || 3; // 默认开设 3 个独立分发端口，打破 Chromium 单端口连接池复用
     this.connectTimeout = options.connectTimeout || options.handshakeTimeout || 3000; // 单个上游握手超时 3 秒 (3000ms)，超过 3 秒立即切换
     this.handshakeTimeout = this.connectTimeout;
+    this.idleTimeout = options.idleTimeout !== undefined ? options.idleTimeout : 60000; // 合理空闲超时 60 秒，避免误杀 WebSocket / SSE / 高延迟请求
     this.maxRetries = options.maxRetries !== undefined ? options.maxRetries : 3; // 默认重试 3 次，每次随机抽取一条
     this.activeConnections = new Set();
   }
@@ -204,16 +205,20 @@ class RotatingDispatcherServer {
         upstreamSocket.pipe(clientSocket);
 
         // 关键增强：为解决 Chromium HTTP/2 和 Keep-Alive 连接池长久保持导致多标签页/多次刷新复用旧 IP 的问题：
-        // 增加数据活动感应空闲超时计时器 (1000ms)。在网页资源加载完毕空闲 1 秒后，自动优雅断开隧道，
-        // 确保下一次页面刷新、点击或打开新标签页时，强制 Chromium 重新向 3 个端口之一发起新建连接并换用新 IP！
+        // 增加数据活动感应空闲超时计时器 (默认 60000ms)。在隧道完全空闲后自动优雅释放资源，
+        // 同时支持 TCP Keep-Alive 保活，避免过早中断 WebSocket、SSE 流式响应与高延迟长请求。
+        const idleTimeoutMs = this.idleTimeout || 60000;
         let idleTimer = null;
         const resetIdleTimer = () => {
           if (idleTimer) clearTimeout(idleTimer);
           idleTimer = setTimeout(() => {
             try { clientSocket.end(); } catch (_) {}
             try { upstreamSocket.end(); } catch (_) {}
-          }, 1000);
+          }, idleTimeoutMs);
         };
+
+        try { clientSocket.setKeepAlive(true, 10000); } catch (_) {}
+        try { upstreamSocket.setKeepAlive(true, 10000); } catch (_) {}
 
         clientSocket.on('data', resetIdleTimer);
         upstreamSocket.on('data', resetIdleTimer);

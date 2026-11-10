@@ -113,13 +113,23 @@ function parseNetscapeCookies(text) {
   const result = [];
 
   for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
+    let trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // 标准 Netscape/curl 规范中，HttpOnly 类型的 Cookie 会被标以 #HttpOnly_ 前缀
+    let isHttpOnly = false;
+    if (trimmed.startsWith('#HttpOnly_')) {
+      isHttpOnly = true;
+      trimmed = trimmed.substring('#HttpOnly_'.length).trim();
+    } else if (trimmed.startsWith('#')) {
+      // 真正的普通注释行跳过
+      continue;
+    }
 
     // 以 Tab 制表符分割，部分软件可能用空格，优先支持制表符，兜底多个空格
-    let parts = line.split('\t');
+    let parts = trimmed.split('\t');
     if (parts.length < 7) {
-      parts = line.split(/\s+/);
+      parts = trimmed.split(/\s+/);
     }
 
     if (parts.length >= 7) {
@@ -141,7 +151,7 @@ function parseNetscapeCookies(text) {
           domain,
           path,
           secure,
-          httpOnly: false,
+          httpOnly: isHttpOnly,
           expirationDate,
           sameSite: 'unspecified'
         });
@@ -186,7 +196,10 @@ function exportAsNetscape(cookies) {
   for (const c of cookies) {
     if (!c || !c.name) continue;
     let domain = c.domain || 'localhost';
-    const flag = domain.startsWith('.') ? 'TRUE' : 'FALSE';
+    if (c.httpOnly) {
+      domain = '#HttpOnly_' + domain;
+    }
+    const flag = (c.domain || '').startsWith('.') ? 'TRUE' : 'FALSE';
     const path = c.path || '/';
     const secure = c.secure ? 'TRUE' : 'FALSE';
     const expires = c.expirationDate ? Math.floor(c.expirationDate) : '0';
